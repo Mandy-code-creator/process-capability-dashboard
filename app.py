@@ -5,13 +5,13 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS
+# 1. PAGE CONFIGURATION & CSS (Giữ nguyên thiết kế cũ của bạn)
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #F3F2F1; }
-    .block-container { padding-top: 1.5rem; }
+    .block-container { padding-top: 2rem !important; }
     .pbi-header {
         background-color: #004E8C; color: white; padding: 15px 25px;
         border-radius: 5px; margin-bottom: 20px;
@@ -22,7 +22,7 @@ st.markdown("""
         text-align: center;
     }
     .kpi-label { color: #605E5C; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-    .kpi-value { color: #323130; font-size: 22px; font-weight: 700; }
+    .kpi-value { color: #323130; font-size: 20px; font-weight: 700; }
     .chart-container {
         background-color: white; padding: 15px; border-radius: 4px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;
@@ -70,7 +70,7 @@ if df is not None:
         plot_min, plot_max = min(lsl, lcl, min(data)) - 0.1, max(usl, ucl, max(data)) + 0.1
 
         # --- MAIN UI ---
-        st.markdown(f'<div class="pbi-header"><span style="font-size: 22px; font-weight: 700;">QUALITY CONTROL REPORT</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="pbi-header"><span style="font-size: 20px; font-weight: 700;">QUALITY CONTROL REPORT</span></div>', unsafe_allow_html=True)
 
         k1, k2, k3, k4, k5 = st.columns(5)
         metrics = [("N", n), ("MEAN", f"{mean:.4f}"), ("STD DEV", f"{std:.4f}"), ("CP", f"{cp:.2f}"), ("CPK", f"{cpk:.2f}")]
@@ -80,16 +80,16 @@ if df is not None:
 
         st.write("")
 
-        # Cấu hình Download hình ảnh chung
+        # Cấu hình Download hình ảnh (Camera icon)
         config_img = {
             'toImageButtonOptions': {
-                'format': 'png',
-                'filename': 'QC_Chart_Export',
+                'format': 'png', 
+                'filename': 'Quality_Report_Chart',
                 'scale': 2 
             }
         }
 
-        # --- ROW 1: DISTRIBUTION & BOXPLOT ---
+        # --- HÀNG 1: HISTOGRAM & BOXPLOT SONG SONG ---
         col_hist, col_box = st.columns(2)
 
         with col_hist:
@@ -123,7 +123,7 @@ if df is not None:
             st.plotly_chart(fig_box, use_container_width=True, config=config_img)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- ROW 2: TREND CHART ---
+        # --- HÀNG 2: TREND CHART ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
