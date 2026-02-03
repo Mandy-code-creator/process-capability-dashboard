@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS (Power BI Style - GIỮ NGUYÊN)
+# 1. PAGE CONFIGURATION & CSS
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
@@ -30,7 +30,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA LOADING (GIỮ NGUYÊN)
+# 2. DATA LOADING
 def load_data():
     if "connections" in st.secrets:
         try:
@@ -45,9 +45,12 @@ def load_data():
 df = load_data()
 
 if df is not None:
+    # --- SIDEBAR: Luôn định nghĩa biến ở đầu ---
     with st.sidebar:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
+        # Đảm bảo time_col luôn có giá trị khởi tạo
+        time_col = st.selectbox("Batch/Time Column", [None] + list(df.columns))
         x_label = st.text_input("X-axis Label", value="Measurement Analysis")
         usl = st.number_input("Upper Spec Limit (USL)", value=1.200, format="%.3f")
         lsl = st.number_input("Lower Spec Limit (LSL)", value=0.700, format="%.3f")
@@ -55,6 +58,7 @@ if df is not None:
             st.cache_data.clear()
             st.rerun()
 
+    # Xử lý dữ liệu
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
@@ -81,12 +85,12 @@ if df is not None:
 
         st.write("")
 
-        # --- CẤU HÌNH TẢI ẢNH (Dùng chung cho các biểu đồ) ---
+        # Cấu hình tải ảnh (Camera icon)
         config_download = {
             'toImageButtonOptions': {
                 'format': 'png', 
-                'filename': 'QC_Dashboard_Export',
-                'scale': 2 # Tăng độ nét ảnh khi tải về
+                'filename': 'QC_Chart_Export',
+                'scale': 2 
             }
         }
 
@@ -101,11 +105,9 @@ if df is not None:
             
             fig_hist = go.Figure()
             fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
-            
             x_curve = np.linspace(plot_min, plot_max, 500)
             y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
             fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
-            
             fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL")
             fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL")
 
@@ -115,7 +117,6 @@ if df is not None:
                 xaxis=dict(range=[plot_min, plot_max], title=x_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(mirror=True, showline=True, linecolor='black')
             )
-            # THÊM CONFIG Ở ĐÂY
             st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -123,7 +124,6 @@ if df is not None:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_box = go.Figure()
             fig_box.add_trace(go.Box(y=data, marker=dict(color='#0078D4', outliercolor='#FF0000'), boxpoints='all', jitter=0.3))
-            
             fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
             fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
             
@@ -132,12 +132,12 @@ if df is not None:
                 title="Boxplot & Outliers",
                 yaxis=dict(range=[plot_min, plot_max], mirror=True, showline=True, linecolor='black')
             )
-            # THÊM CONFIG Ở ĐÂY
             st.plotly_chart(fig_box, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
         # --- BOTTOM ROW: TREND CHART ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        # Sử dụng time_col đã định nghĩa an toàn ở Sidebar
         x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
         p_sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
@@ -156,6 +156,5 @@ if df is not None:
                                title="Process Trend (Control Chart)",
                                xaxis=dict(mirror=True, showline=True, linecolor='black'),
                                yaxis=dict(mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]))
-        # THÊM CONFIG Ở ĐÂY
         st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
         st.markdown('</div>', unsafe_allow_html=True)
