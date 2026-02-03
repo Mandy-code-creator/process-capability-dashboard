@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from scipy import stats
 import math
 
-# 1. 頁面配置 (優化邊距以利 A4 列印)
+# 1. 頁面配置 (優化邊距)
 st.set_page_config(page_title="QC 品質控管分析報告", layout="wide")
 
 st.markdown("""
@@ -46,12 +46,9 @@ def load_data():
 df = load_data()
 
 if df is not None:
-    # --- SIDEBAR: 參數設定 ---
     with st.sidebar:
         st.header("⚙️ 參數設定")
         target_col = st.selectbox("選擇量測數據欄位", df.columns)
-        
-        # 使用手動輸入 Sigma
         sigma_val = st.number_input("控制界限 Sigma (σ) 設定", min_value=0.1, max_value=6.0, value=3.0, step=0.1, format="%.1f")
         
         st.write("---")
@@ -66,46 +63,35 @@ if df is not None:
             st.cache_data.clear()
             st.rerun()
 
-    # 數據處理與清洗
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # --- 核心統計計算 ---
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
-        
-        # Sturges 公式計算 Histogram Bins
         sturges_k = int(1 + 3.322 * math.log10(n))
         
-        # Ca, Cp, Cpk 計算
         u_spec = (usl + lsl) / 2
         t_spec = usl - lsl
         ca = (mean - u_spec) / (t_spec / 2) if t_spec != 0 else 0
         cp = t_spec / (6 * std) if std != 0 else 0
         cpk = cp * (1 - abs(ca))
         
-        # 動態控制界限
         ucl, lcl = mean + (sigma_val * std), mean - (sigma_val * std)
-        
-        # 繪圖邊界優化
         plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.05
         plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.05
 
-        # --- 定義下載配置 (解決 NameError) ---
         config_download = {
             'toImageButtonOptions': {
                 'format': 'png', 
                 'filename': 'QC_Report_Export',
-                'scale': 3 # 高解析度
+                'scale': 3 
             }
         }
 
-        # --- 主界面 UI ---
         st.markdown(f'<div class="pbi-header"><span style="font-size: 16px; font-weight: 700;">品質分析報告 | 繁體中文版 QC Analysis</span></div>', unsafe_allow_html=True)
 
-        # KPI 卡片列
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         metrics = [("樣本數 (N)", n), ("平均值 μ", f"{mean:.3f}"), ("標準差 σ", f"{std:.3f}"), 
                    ("Ca (準確度)", f"{ca:.2f}"), ("Cp (精密度)", f"{cp:.2f}"), ("Cpk (能力)", f"{cpk:.2f}")]
@@ -115,7 +101,6 @@ if df is not None:
 
         st.write("")
 
-        # --- 雙圖並列佈局 (適合 A4 報告) ---
         col_left, col_right = st.columns(2)
 
         with col_left:
@@ -135,8 +120,15 @@ if df is not None:
             fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01")
 
             fig_hist.update_layout(
-                height=300, margin=dict(l=10, r=10, t=30, b=10), template="plotly_white",
-                title=dict(text=f"數據分佈 (Sturges Bins: {sturges_k})", font=dict(size=12)),
+                height=320, 
+                margin=dict(l=10, r=10, t=65, b=10), # Tăng lề trên (t=65)
+                template="plotly_white",
+                title=dict(
+                    text=f"數據分佈 (Sturges Bins: {sturges_k})", 
+                    font=dict(size=14),
+                    y=0.95, # Đẩy tiêu đề lên cao
+                    yanchor='top'
+                ),
                 showlegend=False,
                 xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(title="頻率", mirror=True, showline=True, linecolor='black')
@@ -158,15 +150,21 @@ if df is not None:
             fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text="LCL")
 
             fig_trend.update_layout(
-                height=300, margin=dict(l=40, r=40, t=30, b=40), template="plotly_white",
-                title=dict(text=f"趨勢監控 (±{sigma_val}σ)", font=dict(size=12)),
+                height=320, 
+                margin=dict(l=40, r=40, t=65, b=40), # Tăng lề trên (t=65)
+                template="plotly_white",
+                title=dict(
+                    text=f"趨勢監控 (±{sigma_val}σ)", 
+                    font=dict(size=14),
+                    y=0.95, # Đẩy tiêu đề lên cao
+                    yanchor='top'
+                ),
                 xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max])
             )
             st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- 詳細數據表格 ---
         st.markdown('<div style="color: #004E8C; font-weight: 600; margin-bottom: 5px;">📋 詳細數據紀錄</div>', unsafe_allow_html=True)
         df_clean['判定'] = df_clean[target_col].apply(lambda x: '❌ OUT' if (x < lsl or x > usl) else '✅ PASS')
         st.dataframe(df_clean, use_container_width=True, hide_index=True)
