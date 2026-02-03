@@ -6,10 +6,10 @@ import plotly.graph_objects as go
 from scipy import stats
 import math
 
-# --- 1. PHẢI ĐẶT ĐẦU TIÊN: CẤU HÌNH TRANG ---
+# --- 1. LỆNH NÀY PHẢI LUÔN ĐỨNG ĐẦU TIÊN ---
 st.set_page_config(page_title="QC 品質控管分析報告", layout="wide")
 
-# --- 2. CSS STYLING (Giao diện chuyên nghiệp) ---
+# --- 2. CSS STYLING ---
 st.markdown("""
     <style>
     .stApp { background-color: #F8F9FA; }
@@ -47,12 +47,10 @@ def load_data():
 df = load_data()
 
 if df is not None:
-    # --- SIDEBAR: THIẾT LẬP THÔNG SỐ ---
+    # --- SIDEBAR: CONFIGURATION ---
     with st.sidebar:
         st.header("⚙️ 參數設定")
         target_col = st.selectbox("選擇量測數據欄位", df.columns)
-        
-        # Nhập Sigma thủ công
         sigma_val = st.number_input("控制界限 Sigma (σ) 設定", min_value=0.1, max_value=6.0, value=3.0, step=0.1, format="%.1f")
         
         st.write("---")
@@ -60,23 +58,23 @@ if df is not None:
         y_label = st.text_input("單位標籤", "量測值")
         
         st.write("---")
-        usl = st.number_input("規格上限 (USL)", value=1.200, format="%.3f")
-        lsl = st.number_input("規格下限 (LSL)", value=0.700, format="%.3f")
+        # Thiết lập mặc định phù hợp với dữ liệu độ cứng (Hardness) thực tế của bạn
+        usl = st.number_input("規格上限 (USL)", value=65.0, format="%.1f")
+        lsl = st.number_input("規格下限 (LSL)", value=55.0, format="%.1f")
         
         if st.button("🔄 刷新數據"):
             st.cache_data.clear()
             st.rerun()
 
-    # Xử lý dữ liệu và tính toán
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # TÍNH TOÁN THỐNG KÊ
+        # --- CALCULATIONS ---
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
-        sturges_k = int(1 + 3.322 * math.log10(n)) # Công thức Sturges
+        sturges_k = int(1 + 3.322 * math.log10(n))
         
         u_spec = (usl + lsl) / 2
         t_spec = usl - lsl
@@ -85,31 +83,23 @@ if df is not None:
         cpk = cp * (1 - abs(ca))
         
         ucl, lcl = mean + (sigma_val * std), mean - (sigma_val * std)
-        
-        # Tối ưu hóa vùng vẽ đồ thị
-        plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.05
-        plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.05
-        config_dl = {'toImageButtonOptions': {'format': 'png', 'scale': 3}}
+        plot_min = min(lsl, lcl, min(data)) - 2
+        plot_max = max(usl, ucl, max(data)) + 2
+        config_download = {'toImageButtonOptions': {'format': 'png', 'scale': 3}}
 
-        # --- HEADER & KPI CARDS ---
+        # --- UI HEADER & KPI ---
         st.markdown(f'<div class="pbi-header"><span style="font-size: 16px; font-weight: 700;">品質分析報告 | 繁體中文 QC Analysis</span></div>', unsafe_allow_html=True)
         
         k1, k2, k3, k4, k5, k6 = st.columns(6)
-        metrics = [
-            ("樣本數 (N)", n), 
-            ("平均值 μ", f"{mean:.3f}"), 
-            ("標準差 σ", f"{std:.3f}"), 
-            ("Ca (準確度)", f"{ca:.2f}"), 
-            ("Cp (精密度)", f"{cp:.2f}"), 
-            ("Cpk (能力指數)", f"{cpk:.2f}")
-        ]
+        metrics = [("樣本數 (N)", n), ("平均值 μ", f"{mean:.2f}"), ("標準差 σ", f"{std:.2f}"), 
+                   ("Ca (準確度)", f"{ca:.2f}"), ("Cp (精密度)", f"{cp:.2f}"), ("Cpk (能力指數)", f"{cpk:.2f}")]
         cols = [k1, k2, k3, k4, k5, k6]
         for i, (label, val) in enumerate(metrics):
             cols[i].markdown(f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{val}</div></div>', unsafe_allow_html=True)
 
         st.write("")
 
-        # --- DUAL CHARTS (Parallel Layout) ---
+        # --- DUAL CHARTS (Parallel) ---
         col_left, col_right = st.columns(2)
 
         with col_left:
@@ -128,29 +118,21 @@ if df is not None:
             fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01")
 
             fig_hist.update_layout(
-                height=320, margin=dict(l=10, r=10, t=85, b=10),
+                height=300, margin=dict(l=10, r=10, t=65, b=10),
                 template="plotly_white",
-                annotations=[dict(
-                    x=0.5, y=1.22, xref='paper', yref='paper',
-                    text=f"數據分佈 | Bins: {sturges_k}",
-                    showarrow=False, font=dict(size=14), xanchor='center'
-                )],
+                title=dict(text=f"數據分佈 (Bins: {sturges_k})", font=dict(size=13), y=0.92, x=0.5, xanchor='center'),
                 xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
-                yaxis=dict(title="頻率", mirror=True, showline=True, linecolor='black'),
-                showlegend=False
+                yaxis=dict(title="頻率", mirror=True, showline=True, linecolor='black'), showlegend=False
             )
-            st.plotly_chart(fig_hist, use_container_width=True, config=config_dl)
+            st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col_right:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=list(range(1, n+1)), y=data, 
-                mode='lines+markers', 
-                marker=dict(color=['#FF4B4B' if (v < lsl or v > usl) else '#0078D4' for v in data], size=6),
-                line=dict(color='#0078D4', width=1.5)
-            ))
+            fig_trend.add_trace(go.Scatter(x=list(range(1, n+1)), y=data, mode='lines+markers', 
+                                         marker=dict(color=['#FF4B4B' if (v < lsl or v > usl) else '#0078D4' for v in data], size=6), 
+                                         line=dict(color='#0078D4', width=1.5)))
             
             fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01")
             fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01")
@@ -158,24 +140,17 @@ if df is not None:
             fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text="LCL")
 
             fig_trend.update_layout(
-                height=320, margin=dict(l=40, r=40, t=85, b=40),
+                height=300, margin=dict(l=40, r=40, t=65, b=40),
                 template="plotly_white",
-                annotations=[dict(
-                    x=0.5, y=1.22, xref='paper', yref='paper',
-                    text=f"趨勢監控 | ±{sigma_val}σ",
-                    showarrow=False, font=dict(size=14), xanchor='center'
-                )],
+                title=dict(text=f"趨勢監控 (±{sigma_val}σ)", font=dict(size=13), y=0.92, x=0.5, xanchor='center'),
                 xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]),
                 showlegend=False
             )
-            st.plotly_chart(fig_trend, use_container_width=True, config=config_dl)
+            st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- DATA TABLE ---
-        st.markdown('<div style="color: #004E8C; font-weight: 600; margin-bottom: 5px;">📋 詳細數據紀錄 (Detailed Log)</div>', unsafe_allow_html=True)
+        # DATA TABLE
+        st.markdown('<div style="color: #004E8C; font-weight: 600; margin-bottom: 5px;">📋 詳細數據紀錄</div>', unsafe_allow_html=True)
         df_clean['狀態'] = df_clean[target_col].apply(lambda x: '❌ OUT' if (x < lsl or x > usl) else '✅ PASS')
         st.dataframe(df_clean, use_container_width=True, hide_index=True)
-
-    else:
-        st.warning("⚠️ 數據量不足，無法進行分析。")
