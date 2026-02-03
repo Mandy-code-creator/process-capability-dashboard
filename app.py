@@ -50,6 +50,9 @@ if df is not None:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
         
+        # LỰA CHỌN PHẠM VI SIGMA CHO CONTROL LIMITS
+        sigma_val = st.slider("Control Limit Sigma (σ)", min_value=1.0, max_value=4.0, value=3.0, step=0.5)
+        
         custom_x_label = st.text_input("Trend Chart X-axis Label", value="Sequence Index")
         y_label = st.text_input("Y-axis Label (Measurement)", value="Measurement Analysis")
         
@@ -71,9 +74,12 @@ if df is not None:
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
-        ucl, lcl = mean + (3 * std), mean - (3 * std)
         
-        # Unified Plot Range (±3.5 Sigma for balanced Normal Curve)
+        # Control Limits dựa trên giá trị Sigma được chọn
+        ucl = mean + (sigma_val * std)
+        lcl = mean - (sigma_val * std)
+        
+        # Unified Plot Range
         plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.1
         plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.1
 
@@ -89,10 +95,9 @@ if df is not None:
 
         st.write("")
 
-        # Config tải ảnh
         config_download = {'toImageButtonOptions': {'format': 'png', 'scale': 2}}
 
-        # --- ROW 1: DISTRIBUTION (FULL WIDTH) ---
+        # --- ROW 1: DISTRIBUTION ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         counts, bins = np.histogram(data, bins=12)
         bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
@@ -101,25 +106,23 @@ if df is not None:
         fig_hist = go.Figure()
         fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
         
-        # Balanced Normal Curve
         x_curve = np.linspace(plot_min, plot_max, 500)
         y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
         fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
         
-        # Spec Lines
         fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL")
         fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL")
 
         fig_hist.update_layout(
             height=400, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
-            title="Process Distribution & Normal Curve Analysis", showlegend=False,
+            title=f"Distribution Analysis (Control Limits: ±{sigma_val}σ)", showlegend=False,
             xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
             yaxis=dict(title="Frequency", mirror=True, showline=True, linecolor='black')
         )
         st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- ROW 2: TREND CHART (FULL WIDTH) ---
+        # --- ROW 2: TREND CHART ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         x_axis = list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
@@ -132,12 +135,14 @@ if df is not None:
         
         fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL (Spec)")
         fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL (Spec)")
-        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="UCL (Control)")
-        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="LCL (Control)")
+        
+        # Hiển thị Control Limits động theo Sigma đã chọn
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text=f"UCL ({sigma_val}σ)")
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text=f"LCL ({sigma_val}σ)")
 
         fig_trend.update_layout(
             height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
-            title="Process Trend & Control Limits",
+            title=f"Process Trend & Control Limits (±{sigma_val} Sigma)",
             xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
             yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max])
         )
