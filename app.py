@@ -132,17 +132,7 @@ if df is not None:
             st.plotly_chart(fig_box, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # Histogram
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            counts, bins = np.histogram(data, bins=10)
-            bin_centers = 0.5 * (bins[:-1] + bins[1:])
-            bar_colors = ['#D83B01' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
-            fig_hist = go.Figure()
-            fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors))
-            fig_hist.update_layout(height=210, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Frequency")
-            st.plotly_chart(fig_hist, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-# --- HISTOGRAM VỚI ĐƯỜNG NORMAL CURVE (PHONG CÁCH POWER BI) ---
+            # --- HISTOGRAM VỚI ĐƯỜNG NORMAL CURVE (PHONG CÁCH POWER BI) ---
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             
             # 1. Tính toán Histogram
