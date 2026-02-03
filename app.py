@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS
+# 1. PAGE CONFIGURATION & CSS (Power BI Style)
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
@@ -49,7 +49,12 @@ if df is not None:
     with st.sidebar:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
-        x_label = st.text_input("X-axis Label", value="Measurement Analysis")
+        
+        # TÙY CHỈNH GHI CHÚ TRỤC X
+        custom_x_label = st.text_input("Trend Chart X-axis Label", value="Sequence Index")
+        
+        y_label = st.text_input("Y-axis Label (Measurement)", value="Measurement Analysis")
+        
         usl = st.number_input("Upper Spec Limit (USL)", value=1.200, format="%.3f")
         lsl = st.number_input("Lower Spec Limit (LSL)", value=0.700, format="%.3f")
         
@@ -114,7 +119,7 @@ if df is not None:
             fig_hist.update_layout(
                 height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
                 title="Distribution Analysis", showlegend=False,
-                xaxis=dict(range=[plot_min, plot_max], title=x_label, mirror=True, showline=True, linecolor='black'),
+                xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(mirror=True, showline=True, linecolor='black')
             )
             st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
@@ -137,7 +142,6 @@ if df is not None:
 
         # --- ROW 2: TREND CHART ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-        # Tự động đánh số Index thay vì dùng cột Batch
         x_axis = list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
         p_sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
@@ -153,7 +157,8 @@ if df is not None:
         
         fig_trend.update_layout(height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
                                title="Process Trend (Control Chart)",
-                               xaxis=dict(title="Sequence Index", mirror=True, showline=True, linecolor='black'),
-                               yaxis=dict(mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]))
+                               xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
+                               yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]))
+            
         st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
         st.markdown('</div>', unsafe_allow_html=True)
