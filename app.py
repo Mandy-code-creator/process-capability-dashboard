@@ -142,3 +142,59 @@ if df is not None:
             fig_hist.update_layout(height=210, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Frequency")
             st.plotly_chart(fig_hist, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+# --- HISTOGRAM VỚI ĐƯỜNG NORMAL CURVE (PHONG CÁCH POWER BI) ---
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            
+            # 1. Tính toán Histogram
+            counts, bins = np.histogram(data, bins=10)
+            bin_centers = 0.5 * (bins[:-1] + bins[1:])
+            bin_width = bins[1] - bins[0]
+            
+            # Màu sắc cột: Đỏ nếu ngoài Spec, Xanh nếu trong Spec
+            bar_colors = ['#D83B01' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
+            
+            fig_hist = go.Figure()
+
+            # Vẽ các cột Histogram
+            fig_hist.add_trace(go.Bar(
+                x=bin_centers, 
+                y=counts, 
+                marker_color=bar_colors,
+                name="Frequency",
+                showlegend=False
+            ))
+
+            # 2. Tính toán đường Normal Curve
+            # Tạo dải x rộng hơn một chút để đường cong mềm mại (±3 sigma)
+            x_min_curve = min(data + [lsl]) - (0.5 * std)
+            x_max_curve = max(data + [usl]) + (0.5 * std)
+            x_range = np.linspace(x_min_curve, x_max_curve, 200)
+            
+            # Tính toán PDF và nhân với (Tổng mẫu * Độ rộng bin) để khớp với trục Y của Histogram
+            y_normal = stats.norm.pdf(x_range, mean, std) * n * bin_width
+            
+            # Vẽ đường Normal Curve
+            fig_hist.add_trace(go.Scatter(
+                x=x_range, 
+                y=y_normal, 
+                mode='lines', 
+                line=dict(color='#323130', width=2), # Màu xám đậm chuyên nghiệp
+                name="Normal Curve"
+            ))
+
+            # Thêm đường Spec USL/LSL để đối chiếu trực quan
+            fig_hist.add_vline(x=usl, line_dash="dot", line_color="#D83B01", line_width=1)
+            fig_hist.add_vline(x=lsl, line_dash="dot", line_color="#D83B01", line_width=1)
+
+            fig_hist.update_layout(
+                height=250, 
+                margin=dict(l=10, r=10, t=30, b=10), 
+                template="plotly_white", 
+                title="Distribution & Normal Curve",
+                xaxis=dict(showline=True, linecolor='#605E5C'),
+                yaxis=dict(showgrid=True, gridcolor='#F3F2F1'),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
+            st.markdown('</div>', unsafe_allow_html=True)
