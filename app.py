@@ -5,8 +5,8 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS (Power BI Style)
-st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
+# 1. PAGE CONFIGURATION & CSS
+st.set_page_config(page_title="QC Standard Dashboard", layout="wide")
 
 st.markdown("""
     <style>
@@ -48,29 +48,38 @@ if df is not None:
     with st.sidebar:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
-        time_col = st.selectbox("Time/Batch Column", [None] + list(df.columns))
+        time_col = st.selectbox("Batch/Time Column", [None] + list(df.columns))
         x_label = st.text_input("X-axis Label", value="Measurement")
-        usl = st.number_input("USL", value=-0.100, format="%.3f")
-        lsl = st.number_input("LSL", value=-0.500, format="%.3f")
+        usl = st.number_input("Upper Spec Limit (USL)", value=-0.100, format="%.3f")
+        lsl = st.number_input("Lower Spec Limit (LSL)", value=-0.500, format="%.3f")
         if st.button("🔄 REFRESH DATA"):
             st.cache_data.clear()
             st.rerun()
 
+    # Data Processing
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # CALCULATIONS
+        # --- CALCULATIONS ---
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
+        
+        # Statistical Control Limits (3-Sigma)
+        ucl = mean + (3 * std)
+        lcl = mean - (3 * std)
+
+        # Unified Range for balanced view
+        plot_min = min(lsl, lcl, min(data)) - (0.5 * std)
+        plot_max = max(usl, ucl, max(data)) + (0.5 * std)
 
         # --- MAIN UI ---
-        st.markdown(f'<div class="pbi-header"><span style="font-size: 22px; font-weight: 700;">QUALITY CONTROL REPORT</span></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="pbi-header"><span style="font-size: 22px; font-weight: 700;">QUALITY CONTROL ANALYSIS REPORT</span></div>', unsafe_allow_html=True)
 
-        # KPI Row
+        # KPI Metrics
         k1, k2, k3, k4, k5 = st.columns(5)
         metrics = [("N", n), ("MEAN", f"{mean:.4f}"), ("STD DEV", f"{std:.4f}"), ("CP", f"{cp:.2f}"), ("CPK", f"{cpk:.2f}")]
         cols = [k1, k2, k3, k4, k5]
@@ -79,7 +88,7 @@ if df is not None:
 
         st.write("")
 
-        # --- TOP ROW: HISTOGRAM & BOXPLOT PARALLEL ---
+        # --- TOP ROW: DISTRIBUTION & BOXPLOT ---
         col_hist, col_box = st.columns(2)
 
         with col_hist:
@@ -91,12 +100,18 @@ if df is not None:
             fig_hist = go.Figure()
             fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
             
-            # Normal Curve
-            x_curve = np.linspace(min(data + [lsl]) - 0.1, max(data + [usl]) + 0.1, 200)
+            x_curve = np.linspace(plot_min, plot_max, 500)
             y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
             fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
             
-            fig_hist.update_layout(height=350, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Distribution & Normal Curve", showlegend=False)
+            fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
+            fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
+
+            fig_hist.update_layout(
+                height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
+                title="Distribution & Spec Compliance", showlegend=False,
+                xaxis=dict(range=[plot_min, plot_max], title=x_label, mirror=True, showline=True, linecolor='black')
+            )
             st.plotly_chart(fig_hist, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -104,21 +119,40 @@ if df is not None:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_box = go.Figure()
             fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', jitter=0.3, name="Data"))
-            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01")
-            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01")
-            fig_box.update_layout(height=350, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Analysis")
+            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
+            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
+            
+            fig_box.update_layout(
+                height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
+                title="Outlier & Boxplot Analysis",
+                yaxis=dict(range=[plot_min, plot_max], mirror=True, showline=True, linecolor='black')
+            )
             st.plotly_chart(fig_box, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- BOTTOM ROW: TREND CHART ---
+        # --- BOTTOM ROW: TREND CHART WITH ALL LIMITS ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
         p_colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
         
         fig_trend = go.Figure()
         fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=p_colors, size=10), line=dict(color='#0078D4', width=2), name="Trend"))
-        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
-        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
-        fig_trend.update_layout(height=400, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", title="Process Trend (Control Chart)")
+        
+        # Spec Limits (Customer)
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL (Customer)")
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL (Customer)")
+        
+        # Control Limits (Process Ability)
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text="UCL (Process)")
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text="LCL (Process)")
+        
+        fig_trend.add_hline(y=mean, line_color="#605E5C", annotation_text="Mean")
+
+        fig_trend.update_layout(
+            height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
+            title="Process Control Chart (Standard Limits)",
+            xaxis=dict(mirror=True, showline=True, linecolor='black'),
+            yaxis=dict(mirror=True, showline=True, linecolor='black')
+        )
         st.plotly_chart(fig_trend, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
