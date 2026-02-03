@@ -45,20 +45,19 @@ def load_data():
 df = load_data()
 
 if df is not None:
-    # --- SIDEBAR: Luôn định nghĩa biến ở đầu ---
+    # --- SIDEBAR: CONFIGURATION ---
     with st.sidebar:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
-        # Đảm bảo time_col luôn có giá trị khởi tạo
-        time_col = st.selectbox("Batch/Time Column", [None] + list(df.columns))
         x_label = st.text_input("X-axis Label", value="Measurement Analysis")
         usl = st.number_input("Upper Spec Limit (USL)", value=1.200, format="%.3f")
         lsl = st.number_input("Lower Spec Limit (LSL)", value=0.700, format="%.3f")
+        
         if st.button("🔄 REFRESH DATA"):
             st.cache_data.clear()
             st.rerun()
 
-    # Xử lý dữ liệu
+    # Data Processing
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
@@ -70,7 +69,8 @@ if df is not None:
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
         ucl, lcl = mean + (3 * std), mean - (3 * std)
-
+        
+        # Unified Plot Range
         plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.1
         plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.1
 
@@ -85,7 +85,7 @@ if df is not None:
 
         st.write("")
 
-        # Cấu hình tải ảnh (Camera icon)
+        # Cấu hình tải ảnh chung
         config_download = {
             'toImageButtonOptions': {
                 'format': 'png', 
@@ -94,7 +94,7 @@ if df is not None:
             }
         }
 
-        # --- TOP ROW: DISTRIBUTION & BOXPLOT ---
+        # --- ROW 1: DISTRIBUTION & BOXPLOT ---
         col_hist, col_box = st.columns(2)
 
         with col_hist:
@@ -113,7 +113,7 @@ if df is not None:
 
             fig_hist.update_layout(
                 height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
-                title="Distribution & Spec Compliance", showlegend=False,
+                title="Distribution Analysis", showlegend=False,
                 xaxis=dict(range=[plot_min, plot_max], title=x_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(mirror=True, showline=True, linecolor='black')
             )
@@ -124,8 +124,8 @@ if df is not None:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_box = go.Figure()
             fig_box.add_trace(go.Box(y=data, marker=dict(color='#0078D4', outliercolor='#FF0000'), boxpoints='all', jitter=0.3))
-            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
-            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
+            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2)
+            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2)
             
             fig_box.update_layout(
                 height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
@@ -135,10 +135,10 @@ if df is not None:
             st.plotly_chart(fig_box, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- BOTTOM ROW: TREND CHART ---
+        # --- ROW 2: TREND CHART ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-        # Sử dụng time_col đã định nghĩa an toàn ở Sidebar
-        x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
+        # Tự động đánh số Index thay vì dùng cột Batch
+        x_axis = list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
         p_sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
         
@@ -146,15 +146,14 @@ if df is not None:
         fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', 
                                      marker=dict(color=p_colors, size=p_sizes, line=dict(width=1, color='white')), 
                                      line=dict(color='#0078D4', width=2)))
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2)
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2)
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5)
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5)
         
-        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL (Spec)")
-        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL (Spec)")
-        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text="UCL (Control)")
-        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text="LCL (Control)")
-
         fig_trend.update_layout(height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
                                title="Process Trend (Control Chart)",
-                               xaxis=dict(mirror=True, showline=True, linecolor='black'),
+                               xaxis=dict(title="Sequence Index", mirror=True, showline=True, linecolor='black'),
                                yaxis=dict(mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]))
         st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
         st.markdown('</div>', unsafe_allow_html=True)
