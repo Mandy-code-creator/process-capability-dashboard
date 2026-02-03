@@ -139,8 +139,8 @@ if df is not None:
         fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=p_colors, size=10), line=dict(color='#0078D4', width=2), name="Trend"))
         
         # Spec Limits (Customer)
-        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL (Customer)")
-        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL (Customer)")
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL (Standard)")
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL (Standard)")
         
         # Control Limits (Process Ability)
         fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text="UCL (Process)")
