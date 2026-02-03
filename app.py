@@ -4,8 +4,9 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
+import math
 
-# 1. PAGE CONFIGURATION & CSS (Power BI Style - 繁體中文)
+# 1. PAGE CONFIGURATION & CSS
 st.set_page_config(page_title="QC 品質控管儀表板", layout="wide")
 
 st.markdown("""
@@ -72,15 +73,15 @@ if df is not None:
         # --- CALCULATIONS ---
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         
-        # 1. Cp (精密度/過程能力指數)
+        # Áp dụng công thức Sturges cho số cột Histogram
+        # k = 1 + 3.322 * log10(n)
+        sturges_k = int(1 + 3.322 * math.log10(n))
+        
+        # Tính toán Cp, Ca, Cpk
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
-        
-        # 2. Ca (準確度 - Capability of Accuracy)
-        u = (usl + lsl) / 2 # 規格中心
-        t = usl - lsl # 規格公差
+        u = (usl + lsl) / 2
+        t = usl - lsl
         ca = (mean - u) / (t / 2) if t != 0 else 0
-        
-        # 3. Cpk (製程能力指數)
         cpk = cp * (1 - abs(ca))
         
         ucl, lcl = mean + (sigma_val * std), mean - (sigma_val * std)
@@ -91,7 +92,7 @@ if df is not None:
         # --- MAIN UI ---
         st.markdown(f'<div class="pbi-header"><span style="font-size: 22px; font-weight: 700;">品質控管分析報告 (QC Report)</span></div>', unsafe_allow_html=True)
 
-        # KPI Row với Ca và giải thích tên
+        # KPI Row
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         metrics = [
             ("樣本數 (N)", n), 
@@ -108,9 +109,9 @@ if df is not None:
         st.write("")
         config_download = {'toImageButtonOptions': {'format': 'png', 'scale': 2}}
 
-        # --- ROW 1: DISTRIBUTION ---
+        # --- ROW 1: DISTRIBUTION (Sử dụng Sturges k) ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-        counts, bins = np.histogram(data, bins=12)
+        counts, bins = np.histogram(data, bins=sturges_k)
         bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
         bar_colors = ['#FF0000' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
         
@@ -121,12 +122,12 @@ if df is not None:
         y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
         fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="常態分佈"))
         
-        fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="規格上限 USL")
-        fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="規格下限 LSL")
+        fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL")
+        fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL")
 
         fig_hist.update_layout(
             height=400, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
-            title=f"數據分佈與常態曲線 (控制界限: ±{sigma_val}σ)", showlegend=False,
+            title=f"數據分佈與常態曲線 (Sturges Bins: {sturges_k})", showlegend=False,
             xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
             yaxis=dict(title="頻率 (Frequency)", mirror=True, showline=True, linecolor='black')
         )
@@ -145,8 +146,8 @@ if df is not None:
         
         fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="規格上限 USL")
         fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="規格下限 LSL")
-        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text=f"控制上限 UCL ({sigma_val}σ)")
-        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text=f"控制下限 LCL ({sigma_val}σ)")
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text=f"UCL ({sigma_val}σ)")
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text=f"LCL ({sigma_val}σ)")
 
         fig_trend.update_layout(
             height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
