@@ -131,28 +131,30 @@ if df is not None:
             st.markdown('</div>', unsafe_allow_html=True)
 
         # --- BOTTOM ROW: TREND CHART WITH ALL LIMITS ---
+       # --- HÀNG 2: TREND CHART (PHÂN BIỆT MÀU ĐIỂM VÀ ĐƯỜNG GIỚI HẠN) ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
-        p_colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
+        
+        # Điểm vi phạm Spec: Màu Đỏ Rực | Điểm đạt: Màu Xanh Dương
+        p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
+        p_sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
         
         fig_trend = go.Figure()
-        fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=p_colors, size=10), line=dict(color='#0078D4', width=2), name="Trend"))
+        fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', 
+                                     marker=dict(color=p_colors, size=p_sizes, line=dict(width=1, color='white')), 
+                                     line=dict(color='#0078D4', width=2), name="Measurement"))
         
-        # Spec Limits (Customer)
-        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL (Standard)")
-        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL (Standard)")
+        # Spec Limits (Màu Cam Đậm - Yêu cầu khách hàng)
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL (Spec)")
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL (Spec)")
         
-        # Control Limits (Process Ability)
-        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text="UCL (Process)")
-        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text="LCL (Process)")
+        # Control Limits (Màu Xanh Lá - Năng lực dây chuyền)
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="UCL (Control)")
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="LCL (Control)")
         
-        fig_trend.add_hline(y=mean, line_color="#605E5C", annotation_text="Mean")
-
-        fig_trend.update_layout(
-            height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
-            title="Process Control Chart (Standard Limits)",
-            xaxis=dict(mirror=True, showline=True, linecolor='black'),
-            yaxis=dict(mirror=True, showline=True, linecolor='black')
-        )
+        fig_trend.update_layout(height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
+                               title="Trend Chart & Outlier Detection",
+                               xaxis=dict(mirror=True, showline=True, linecolor='black'),
+                               yaxis=dict(mirror=True, showline=True, linecolor='black'))
         st.plotly_chart(fig_trend, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
