@@ -5,35 +5,28 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS
-st.set_page_config(page_title="QC Analytics", layout="wide")
+# 1. PAGE CONFIGURATION
+st.set_page_config(page_title="QC Analytics Dashboard", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #f0f2f5; }
-    .block-container { padding-top: 1.5rem; }
     .metric-card {
-        background-color: #ffffff;
-        padding: 12px;
-        border-radius: 10px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        margin-bottom: 10px;
+        background-color: #ffffff; padding: 12px; border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05); margin-bottom: 10px;
         border-left: 5px solid #008080;
     }
     .metric-label { color: #64748b; font-size: 13px; font-weight: 600; }
     .metric-value { color: #1e293b; font-size: 20px; font-weight: 700; }
     .cpk-container {
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        margin-top: 5px;
+        padding: 15px; border-radius: 10px; text-align: center;
+        color: white; margin-top: 5px; margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
 
 # 2. DATA LOADING
-def get_data():
+def load_data():
     if "connections" in st.secrets:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -44,103 +37,101 @@ def get_data():
             return None
     return None
 
-df = get_data()
+df = load_data()
 
 if df is not None:
-    # Sidebar: 規格設定
+    # --- SIDEBAR: 規格設定 ---
     st.sidebar.header("⚙️ 規格設定")
-    target_col = st.sidebar.selectbox("數據欄位", df.columns)
-    usl = st.sidebar.number_input("規格上限 (USL)", value=-0.100, format="%.3f")
-    lsl = st.sidebar.number_input("規格下限 (LSL)", value=-0.500, format="%.3f")
+    target_col = st.sidebar.selectbox("數據欄位 (Data Column)", df.columns)
     
-    raw_data = pd.to_numeric(df[target_col], errors='coerce').dropna()
-    data = raw_data.tolist()
+    # Label cho trục X của Control Chart (ví dụ cột Ngày hoặc ID lô)
+    time_col = st.sidebar.selectbox("時間/批次欄位 (Time/Batch Column)", [None] + list(df.columns))
+    
+    custom_x_label = st.sidebar.text_input("圖表標籤 (X-axis Label)", value=f"{target_col}")
+    
+    usl = st.sidebar.number_input("USL", value=-0.100, format="%.3f")
+    lsl = st.sidebar.number_input("LSL", value=-0.500, format="%.3f")
+    
+    if st.sidebar.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.rerun()
+
+    # Xử lý dữ liệu
+    df_clean = df.copy()
+    df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
+    df_clean = df_clean.dropna(subset=[target_col])
+    data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # CALCULATIONS
-        n = len(data)
-        mean = np.mean(data)
-        std = np.std(data, ddof=1)
+        # TÍNH TOÁN
+        n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
         ca = (mean - (usl + lsl)/2) / ((usl - lsl)/2)
 
-        st.markdown(f'<h2 style="color: #0f172a; margin-bottom:20px;">📊 Process Capability: {target_col} (LAB)</h2>', unsafe_allow_html=True)
+        st.markdown(f'<h2 style="color: #0f172a;">📊 QC Analysis: {target_col}</h2>', unsafe_allow_html=True)
 
-        col_metrics, col_chart = st.columns([1, 2.8])
+        # BỐ CỤC CHÍNH
+        col_metrics, col_charts = st.columns([1, 3])
 
         with col_metrics:
             st.markdown(f"""
-                <div class="metric-card"><div class="metric-label">SAMPLE SIZE (N)</div><div class="metric-value">{n}</div></div>
-                <div class="metric-card"><div class="metric-label">MEAN / STD DEV</div><div class="metric-value">{mean:.4f} / {std:.4f}</div></div>
-                <div class="metric-card"><div class="metric-label">Ca (BIAS) / Cp</div><div class="metric-value">{ca:.2f} / {cp:.2f}</div></div>
+                <div class="metric-card"><div class="metric-label">N</div><div class="metric-value">{n}</div></div>
+                <div class="metric-card"><div class="metric-label">MEAN</div><div class="metric-value">{mean:.4f}</div></div>
+                <div class="metric-card"><div class="metric-label">STD DEV</div><div class="metric-value">{std:.4f}</div></div>
             """, unsafe_allow_html=True)
-
+            
             cpk_bg = "#10b981" if cpk >= 1.33 else "#f59e0b" if cpk >= 1.0 else "#ef4444"
-            st.markdown(f"""
-                <div class="cpk-container" style="background-color: {cpk_bg};">
-                    <div style="font-size: 13px; font-weight: 600; opacity: 0.9;">CPK INDEX</div>
-                    <div style="font-size: 36px; font-weight: 900;">{cpk:.2f}</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-        with col_chart:
-            # --- CẤU HÌNH BIỂU ĐỒ CÂN ĐỐI ---
-            counts, bins = np.histogram(data, bins=12)
-            bin_centers = 0.5 * (bins[:-1] + bins[1:])
-            bin_width = bins[1] - bins[0]
-            bar_colors = ['#f87171' if (x < lsl or x > usl) else '#3b82f6' for x in bin_centers]
-
-            fig = go.Figure()
-
-            # Bars
-            fig.add_trace(go.Bar(
-                x=bin_centers, y=counts, width=bin_width*0.85,
-                marker=dict(color=bar_colors, line=dict(color='white', width=1)),
-                showlegend=False
-            ))
-
-            # Kéo dài đường Normal Curve cân đối hai bên (±4 sigma)
-            x_min = min(min(data), lsl) - (2 * std)
-            x_max = max(max(data), usl) + (2 * std)
-            x_curve = np.linspace(x_min, x_max, 500)
-            y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
+            st.markdown(f'<div class="cpk-container" style="background-color:{cpk_bg};"><h3>CPK: {cpk:.2f}</h3></div>', unsafe_allow_html=True)
             
-            fig.add_trace(go.Scatter(
-                x=x_curve, y=y_curve, 
-                mode='lines', 
-                line=dict(color='#0f172a', width=2.5), 
-                name='Normal Curve'
-            ))
+            # BOXPLOT NHỎ GỌN
+            fig_box = go.Figure()
+            fig_box.add_trace(go.Box(y=data, name="", marker_color='#008080', boxpoints='all'))
+            fig_box.update_layout(height=250, margin=dict(l=10, r=10, t=30, b=10), title="Boxplot Distribution")
+            st.plotly_chart(fig_box, use_container_width=True)
 
-            # Spec Lines
-            fig.add_vline(x=lsl, line_dash="dash", line_color="#ef4444", line_width=2)
-            fig.add_vline(x=usl, line_dash="dash", line_color="#ef4444", line_width=2)
+        with col_charts:
+            tab1, tab2 = st.tabs(["📈 Control Chart (Trend)", "📊 Distribution (Histogram)"])
 
-            # Cấu hình khung bao quanh (Box) và lưới
-            fig.update_layout(
-                margin=dict(l=10, r=10, t=10, b=10),
-                height=450,
-                template="plotly_white",
-                # Tạo khung bao quanh biểu đồ
-                xaxis=dict(
-                    title="Measurement Value",
-                    mirror=True, # Hiện đường kẻ ở cả 4 cạnh
-                    ticks='outside',
-                    showline=True,
-                    linecolor='black',
-                    gridcolor='#e2e8f0',
-                    range=[x_min, x_max] # Cố định dải hiển thị cân đối
-                ),
-                yaxis=dict(
-                    title="Frequency",
-                    mirror=True,
-                    ticks='outside',
-                    showline=True,
-                    linecolor='black',
-                    gridcolor='#e2e8f0'
-                ),
-                legend=dict(x=0.98, y=0.98, xanchor='right', yanchor='top', bordercolor="black", borderwidth=1)
-            )
-            
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+            with tab1:
+                # --- BIỂU ĐỒ KIỂM SOÁT (CONTROL CHART) ---
+                fig_control = go.Figure()
+                x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
+                
+                # Đường dữ liệu thực tế
+                fig_control.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', name=f'LAB Data', line=dict(color='#3b82f6')))
+                
+                # Đường USL/LSL
+                fig_control.add_hline(y=usl, line_dash="dash", line_color="red", annotation_text="USL")
+                fig_control.add_hline(y=lsl, line_dash="dash", line_color="red", annotation_text="LSL")
+                
+                # Đường Trung bình (CL)
+                fig_control.add_hline(y=mean, line_color="green", annotation_text="Mean")
+
+                fig_control.update_layout(
+                    height=450, template="plotly_white", title="Process Control Chart (Trend)",
+                    xaxis_title=time_col if time_col else "Index", yaxis_title=custom_x_label,
+                    xaxis=dict(mirror=True, showline=True, linecolor='black'),
+                    yaxis=dict(mirror=True, showline=True, linecolor='black')
+                )
+                st.plotly_chart(fig_control, use_container_width=True)
+
+            with tab2:
+                # --- HISTOGRAM (GIỮ NGUYÊN BỐ CỤC BOXED CŨ) ---
+                counts, bins = np.histogram(data, bins=12)
+                bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
+                bar_colors = ['#f87171' if (x < lsl or x > usl) else '#4a90e2' for x in bin_centers]
+
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, width=bin_width*0.85, marker_color=bar_colors, showlegend=False))
+                
+                x_curve = np.linspace(min(data + [lsl]) - 0.1, max(data + [usl]) + 0.1, 200)
+                y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
+                fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name='Normal'))
+
+                fig_hist.update_layout(
+                    height=450, template="plotly_white", xaxis_title=custom_x_label, yaxis_title="Frequency",
+                    xaxis=dict(mirror=True, showline=True, linecolor='black'),
+                    yaxis=dict(mirror=True, showline=True, linecolor='black')
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
