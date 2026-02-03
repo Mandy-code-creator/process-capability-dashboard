@@ -5,25 +5,44 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS (Power BI Style)
+# 1. PAGE CONFIGURATION & CSS (Power BI Style - Fixed Header)
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
     <style>
+    /* Nền xám nhạt */
     .stApp { background-color: #F3F2F1; }
-    .block-container { padding-top: 1rem; }
-    .pbi-header {
-        background-color: #004E8C; color: white; padding: 15px 25px;
-        border-radius: 5px; margin-bottom: 20px; display: flex;
-        justify-content: space-between; align-items: center;
+    
+    /* Căn chỉnh lại khoảng cách toàn trang để không bị che tiêu đề */
+    .block-container { 
+        padding-top: 2rem !important; 
+        padding-bottom: 0rem !important; 
     }
+    
+    /* Header dải màu xanh đậm chuyên nghiệp - Đảm bảo không bị che */
+    .pbi-header {
+        background-color: #004E8C; 
+        color: white; 
+        padding: 20px 25px;
+        border-radius: 5px; 
+        margin-bottom: 25px; 
+        display: flex;
+        justify-content: space-between; 
+        align-items: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        width: 100%;
+    }
+    
+    /* Thẻ chỉ số (KPI Cards) */
     .kpi-card {
-        background-color: white; border-radius: 4px; padding: 10px;
+        background-color: white; border-radius: 4px; padding: 15px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-bottom: 4px solid #004E8C;
         text-align: center;
     }
-    .kpi-label { color: #605E5C; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-    .kpi-value { color: #323130; font-size: 20px; font-weight: 700; }
+    .kpi-label { color: #605E5C; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .kpi-value { color: #323130; font-size: 22px; font-weight: 700; }
+    
+    /* Vùng chứa biểu đồ */
     .chart-container {
         background-color: white; padding: 15px; border-radius: 4px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px;
@@ -31,8 +50,8 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA LOADING
-def load_data():
+# 2. KẾT NỐI DỮ LIỆU
+def get_data():
     if "connections" in st.secrets:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -43,7 +62,7 @@ def load_data():
             return None
     return None
 
-df = load_data()
+df = get_data()
 
 if df is not None:
     # Sidebar - 規格設定
@@ -51,32 +70,36 @@ if df is not None:
         st.header("⚙️ 規格設定")
         target_col = st.selectbox("數據欄位", df.columns)
         time_col = st.selectbox("時間軸/批次欄位", [None] + list(df.columns))
-        custom_label = st.text_input("圖表標籤", value=f"{target_col}")
         usl = st.number_input("USL", value=-0.100, format="%.3f")
         lsl = st.number_input("LSL", value=-0.500, format="%.3f")
         if st.button("🔄 刷新數據"):
             st.cache_data.clear()
             st.rerun()
 
-    # Data Processing
+    # Xử lý dữ liệu
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # CALCULATIONS
+        # TÍNH TOÁN
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
-        ca = (mean - (usl + lsl)/2) / ((usl - lsl)/2)
 
-        # --- MAIN UI ---
-        st.markdown(f'<div class="pbi-header"><span style="font-size: 20px; font-weight: 700;">Quality Control Report: {target_col}</span></div>', unsafe_allow_html=True)
+        # --- GIAO DIỆN CHÍNH ---
+        # Sử dụng tiêu đề với padding đủ lớn để tránh bị che
+        st.markdown(f'''
+            <div class="pbi-header">
+                <span style="font-size: 24px; font-weight: 700;">Quality Control Report: {target_col}</span>
+                <span style="font-size: 14px; opacity: 0.8;">Data Source: Google Sheets</span>
+            </div>
+        ''', unsafe_allow_html=True)
 
-        # KPI Metrics Row
+        # Hàng KPI Cards
         k1, k2, k3, k4, k5 = st.columns(5)
-        metrics = [("N", n), ("Mean", f"{mean:.4f}"), ("StdDev", f"{std:.4f}"), ("Cp", f"{cp:.2f}"), ("Cpk", f"{cpk:.2f}")]
+        metrics = [("Samples (N)", n), ("Mean", f"{mean:.4f}"), ("StdDev", f"{std:.4f}"), ("Cp", f"{cp:.2f}"), ("Cpk", f"{cpk:.2f}")]
         cols = [k1, k2, k3, k4, k5]
         
         for i, (label, val) in enumerate(metrics):
@@ -84,21 +107,19 @@ if df is not None:
 
         st.write("")
 
-        # --- CHARTS ROW (GRID LAYOUT) ---
+        # Bố cục biểu đồ
         col_left, col_right = st.columns([2, 1])
 
         with col_left:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            # Control Chart with outlier coloring
+            # Trend Chart
             x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
             colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
-            sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
-
             fig_ctrl = go.Figure()
-            fig_ctrl.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(size=sizes, color=colors, line=dict(width=1, color='white')), line=dict(color='#0078D4', width=2), name="LAB"))
+            fig_ctrl.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=colors, size=10), line=dict(color='#0078D4'), name="LAB"))
             fig_ctrl.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
             fig_ctrl.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
-            fig_ctrl.update_layout(height=480, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", title="Process Trend Analysis", xaxis=dict(mirror=True, showline=True, linecolor='black'), yaxis=dict(mirror=True, showline=True, linecolor='black'))
+            fig_ctrl.update_layout(height=450, template="plotly_white", title="Process Trend Analysis", margin=dict(l=40,r=40,t=40,b=40))
             st.plotly_chart(fig_ctrl, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -106,8 +127,8 @@ if df is not None:
             # Boxplot
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_box = go.Figure()
-            fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', jitter=0.3, name="Data"))
-            fig_box.update_layout(height=225, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Distribution")
+            fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', name="Data"))
+            fig_box.update_layout(height=210, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Distribution")
             st.plotly_chart(fig_box, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -118,9 +139,6 @@ if df is not None:
             bar_colors = ['#D83B01' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
             fig_hist = go.Figure()
             fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors))
-            fig_hist.update_layout(height=225, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Frequency")
+            fig_hist.update_layout(height=210, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Frequency")
             st.plotly_chart(fig_hist, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-
-    else:
-        st.warning("⚠️ No valid numeric data found.")
