@@ -1,69 +1,126 @@
-# --- BỐ CỤC BIỂU ĐỒ NÂNG CAO ---
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from scipy import stats
+
+# 1. PAGE CONFIGURATION & CSS (Power BI Style)
+st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
+
+st.markdown("""
+    <style>
+    .stApp { background-color: #F3F2F1; }
+    .block-container { padding-top: 1rem; }
+    .pbi-header {
+        background-color: #004E8C; color: white; padding: 15px 25px;
+        border-radius: 5px; margin-bottom: 20px; display: flex;
+        justify-content: space-between; align-items: center;
+    }
+    .kpi-card {
+        background-color: white; border-radius: 4px; padding: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-bottom: 4px solid #004E8C;
+        text-align: center;
+    }
+    .kpi-label { color: #605E5C; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .kpi-value { color: #323130; font-size: 20px; font-weight: 700; }
+    .chart-container {
+        background-color: white; padding: 15px; border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# 2. DATA LOADING
+def load_data():
+    if "connections" in st.secrets:
+        try:
+            conn = st.connection("gsheets", type=GSheetsConnection)
+            url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            return conn.read(spreadsheet=url, ttl=60)
+        except Exception as e:
+            st.error(f"Error: {e}")
+            return None
+    return None
+
+df = load_data()
+
+if df is not None:
+    # Sidebar - 規格設定
+    with st.sidebar:
+        st.header("⚙️ 規格設定")
+        target_col = st.selectbox("數據欄位", df.columns)
+        time_col = st.selectbox("時間軸/批次欄位", [None] + list(df.columns))
+        custom_label = st.text_input("圖表標籤", value=f"{target_col}")
+        usl = st.number_input("USL", value=-0.100, format="%.3f")
+        lsl = st.number_input("LSL", value=-0.500, format="%.3f")
+        if st.button("🔄 刷新數據"):
+            st.cache_data.clear()
+            st.rerun()
+
+    # Data Processing
+    df_clean = df.copy()
+    df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
+    df_clean = df_clean.dropna(subset=[target_col])
+    data = df_clean[target_col].tolist()
+
+    if len(data) > 1:
+        # CALCULATIONS
+        n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
+        cp = (usl - lsl) / (6 * std) if std != 0 else 0
+        cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
+        ca = (mean - (usl + lsl)/2) / ((usl - lsl)/2)
+
+        # --- MAIN UI ---
+        st.markdown(f'<div class="pbi-header"><span style="font-size: 20px; font-weight: 700;">Quality Control Report: {target_col}</span></div>', unsafe_allow_html=True)
+
+        # KPI Metrics Row
+        k1, k2, k3, k4, k5 = st.columns(5)
+        metrics = [("N", n), ("Mean", f"{mean:.4f}"), ("StdDev", f"{std:.4f}"), ("Cp", f"{cp:.2f}"), ("Cpk", f"{cpk:.2f}")]
+        cols = [k1, k2, k3, k4, k5]
+        
+        for i, (label, val) in enumerate(metrics):
+            cols[i].markdown(f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{val}</div></div>', unsafe_allow_html=True)
+
+        st.write("")
+
+        # --- CHARTS ROW (GRID LAYOUT) ---
         col_left, col_right = st.columns([2, 1])
 
         with col_left:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            # --- CONTROL CHART VỚI CẢNH BÁO MÀU SẮC ---
+            # Control Chart with outlier coloring
             x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
-            
-            # Xác định màu sắc cho từng điểm: Đỏ nếu ngoài Spec, Xanh nếu trong Spec
-            point_colors = ['#D83B01' if (val < lsl or val > usl) else '#0078D4' for val in data]
-            point_sizes = [12 if (val < lsl or val > usl) else 8 for val in data] # Điểm lỗi to hơn
+            colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
+            sizes = [12 if (v < lsl or v > usl) else 8 for v in data]
 
             fig_ctrl = go.Figure()
-            
-            # Vẽ đường nối
-            fig_ctrl.add_trace(go.Scatter(
-                x=x_axis, y=data, 
-                mode='lines+markers',
-                marker=dict(size=point_sizes, color=point_colors, line=dict(width=1, color='white')),
-                line=dict(width=2, color='#0078D4'),
-                name="Measurement"
-            ))
-            
-            # Thêm các đường giới hạn
-            fig_ctrl.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL")
-            fig_ctrl.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL")
-            fig_ctrl.add_hline(y=mean, line_color="#107C10", line_width=1, annotation_text="Mean")
-
-            fig_ctrl.update_layout(
-                height=450, template="plotly_white", 
-                title="Process Trend & Outlier Detection",
-                margin=dict(l=40, r=40, t=40, b=40),
-                xaxis=dict(showline=True, linecolor='#605E5C', mirror=True, tickangle=45),
-                yaxis=dict(showline=True, linecolor='#605E5C', mirror=True)
-            )
+            fig_ctrl.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(size=sizes, color=colors, line=dict(width=1, color='white')), line=dict(color='#0078D4', width=2), name="LAB"))
+            fig_ctrl.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
+            fig_ctrl.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
+            fig_ctrl.update_layout(height=480, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", title="Process Trend Analysis", xaxis=dict(mirror=True, showline=True, linecolor='black'), yaxis=dict(mirror=True, showline=True, linecolor='black'))
             st.plotly_chart(fig_ctrl, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
         with col_right:
-            # --- BOXPLOT VỚI CẢNH BÁO OUTLIERS ---
+            # Boxplot
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             fig_box = go.Figure()
-            fig_box.add_trace(go.Box(
-                y=data, 
-                marker_color='#0078D4',
-                boxpoints='all', # Hiển thị tất cả các điểm bên cạnh box
-                jitter=0.3,
-                pointpos=-1.8,
-                name="Distribution"
-            ))
-            # Đường giới hạn trên Boxplot
-            fig_box.add_hline(y=usl, line_dash="dot", line_color="#D83B01")
-            fig_box.add_hline(y=lsl, line_dash="dot", line_color="#D83B01")
-            
-            fig_box.update_layout(height=210, margin=dict(l=10, r=10, t=30, b=10), title="Boxplot Analysis")
+            fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', jitter=0.3, name="Data"))
+            fig_box.update_layout(height=225, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Distribution")
             st.plotly_chart(fig_box, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-            # --- HISTOGRAM (TÔ MÀU CỘT VI PHẠM) ---
+            # Histogram
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
             counts, bins = np.histogram(data, bins=10)
             bin_centers = 0.5 * (bins[:-1] + bins[1:])
             bar_colors = ['#D83B01' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
-            
             fig_hist = go.Figure()
             fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors))
-            fig_hist.update_layout(height=210, margin=dict(l=10, r=10, t=30, b=10), title="Frequency")
+            fig_hist.update_layout(height=225, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Frequency")
             st.plotly_chart(fig_hist, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+
+    else:
+        st.warning("⚠️ No valid numeric data found.")
