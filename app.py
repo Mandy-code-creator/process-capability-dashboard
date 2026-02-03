@@ -48,7 +48,6 @@ if df is not None:
     with st.sidebar:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
-        time_col = st.selectbox("Batch/Time Column", [None] + list(df.columns))
         x_label = st.text_input("X-axis Label", value="Measurement Analysis")
         usl = st.number_input("Upper Spec Limit (USL)", value=1.200, format="%.3f")
         lsl = st.number_input("Lower Spec Limit (LSL)", value=0.700, format="%.3f")
