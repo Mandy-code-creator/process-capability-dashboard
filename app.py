@@ -5,53 +5,33 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS (Power BI Style - Fixed Header)
+# 1. PAGE CONFIGURATION & CSS (Power BI Style)
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
     <style>
-    /* Nền xám nhạt */
     .stApp { background-color: #F3F2F1; }
-    
-    /* Căn chỉnh lại khoảng cách toàn trang để không bị che tiêu đề */
-    .block-container { 
-        padding-top: 2rem !important; 
-        padding-bottom: 0rem !important; 
-    }
-    
-    /* Header dải màu xanh đậm chuyên nghiệp - Đảm bảo không bị che */
+    .block-container { padding-top: 1.5rem; }
     .pbi-header {
-        background-color: #004E8C; 
-        color: white; 
-        padding: 20px 25px;
-        border-radius: 5px; 
-        margin-bottom: 25px; 
-        display: flex;
-        justify-content: space-between; 
-        align-items: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        width: 100%;
+        background-color: #004E8C; color: white; padding: 15px 25px;
+        border-radius: 5px; margin-bottom: 20px;
     }
-    
-    /* Thẻ chỉ số (KPI Cards) */
     .kpi-card {
-        background-color: white; border-radius: 4px; padding: 15px;
+        background-color: white; border-radius: 4px; padding: 10px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-bottom: 4px solid #004E8C;
         text-align: center;
     }
-    .kpi-label { color: #605E5C; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+    .kpi-label { color: #605E5C; font-size: 11px; font-weight: 600; text-transform: uppercase; }
     .kpi-value { color: #323130; font-size: 22px; font-weight: 700; }
-    
-    /* Vùng chứa biểu đồ */
     .chart-container {
         background-color: white; padding: 15px; border-radius: 4px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. KẾT NỐI DỮ LIỆU
-def get_data():
+# 2. DATA LOADING
+def load_data():
     if "connections" in st.secrets:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
@@ -62,129 +42,83 @@ def get_data():
             return None
     return None
 
-df = get_data()
+df = load_data()
 
 if df is not None:
-    # Sidebar - 規格設定
     with st.sidebar:
-        st.header("⚙️ 規格設定")
-        target_col = st.selectbox("數據欄位", df.columns)
-        time_col = st.selectbox("時間軸/批次欄位", [None] + list(df.columns))
+        st.header("⚙️ CONFIGURATION")
+        target_col = st.selectbox("Data Column", df.columns)
+        time_col = st.selectbox("Time/Batch Column", [None] + list(df.columns))
+        x_label = st.text_input("X-axis Label", value="Measurement")
         usl = st.number_input("USL", value=-0.100, format="%.3f")
         lsl = st.number_input("LSL", value=-0.500, format="%.3f")
-        if st.button("🔄 刷新數據"):
+        if st.button("🔄 REFRESH DATA"):
             st.cache_data.clear()
             st.rerun()
 
-    # Xử lý dữ liệu
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # TÍNH TOÁN
+        # CALCULATIONS
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
 
-        # --- GIAO DIỆN CHÍNH ---
-        # Sử dụng tiêu đề với padding đủ lớn để tránh bị che
-        st.markdown(f'''
-            <div class="pbi-header">
-                <span style="font-size: 24px; font-weight: 700;">Quality Control Report: {target_col}</span>
-                <span style="font-size: 14px; opacity: 0.8;">Data Source: Google Sheets</span>
-            </div>
-        ''', unsafe_allow_html=True)
+        # --- MAIN UI ---
+        st.markdown(f'<div class="pbi-header"><span style="font-size: 22px; font-weight: 700;">QUALITY CONTROL REPORT</span></div>', unsafe_allow_html=True)
 
-        # Hàng KPI Cards
+        # KPI Row
         k1, k2, k3, k4, k5 = st.columns(5)
-        metrics = [("Samples (N)", n), ("Mean", f"{mean:.4f}"), ("StdDev", f"{std:.4f}"), ("Cp", f"{cp:.2f}"), ("Cpk", f"{cpk:.2f}")]
+        metrics = [("N", n), ("MEAN", f"{mean:.4f}"), ("STD DEV", f"{std:.4f}"), ("CP", f"{cp:.2f}"), ("CPK", f"{cpk:.2f}")]
         cols = [k1, k2, k3, k4, k5]
-        
         for i, (label, val) in enumerate(metrics):
             cols[i].markdown(f'<div class="kpi-card"><div class="kpi-label">{label}</div><div class="kpi-value">{val}</div></div>', unsafe_allow_html=True)
 
         st.write("")
 
-        # Bố cục biểu đồ
-        col_left, col_right = st.columns([2, 1])
+        # --- TOP ROW: HISTOGRAM & BOXPLOT PARALLEL ---
+        col_hist, col_box = st.columns(2)
 
-        with col_left:
+        with col_hist:
             st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            # Trend Chart
-            x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
-            colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
-            fig_ctrl = go.Figure()
-            fig_ctrl.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=colors, size=10), line=dict(color='#0078D4'), name="LAB"))
-            fig_ctrl.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
-            fig_ctrl.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
-            fig_ctrl.update_layout(height=450, template="plotly_white", title="Process Trend Analysis", margin=dict(l=40,r=40,t=40,b=40))
-            st.plotly_chart(fig_ctrl, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col_right:
-            # Boxplot
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            fig_box = go.Figure()
-            fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', name="Data"))
-            fig_box.update_layout(height=210, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Distribution")
-            st.plotly_chart(fig_box, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-            # --- HISTOGRAM VỚI ĐƯỜNG NORMAL CURVE (PHONG CÁCH POWER BI) ---
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            
-            # 1. Tính toán Histogram
             counts, bins = np.histogram(data, bins=10)
-            bin_centers = 0.5 * (bins[:-1] + bins[1:])
-            bin_width = bins[1] - bins[0]
-            
-            # Màu sắc cột: Đỏ nếu ngoài Spec, Xanh nếu trong Spec
+            bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
             bar_colors = ['#D83B01' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
             
             fig_hist = go.Figure()
-
-            # Vẽ các cột Histogram
-            fig_hist.add_trace(go.Bar(
-                x=bin_centers, 
-                y=counts, 
-                marker_color=bar_colors,
-                name="Frequency",
-                showlegend=False
-            ))
-
-            # 2. Tính toán đường Normal Curve
-            # Tạo dải x rộng hơn một chút để đường cong mềm mại (±3 sigma)
-            x_min_curve = min(data + [lsl]) - (0.5 * std)
-            x_max_curve = max(data + [usl]) + (0.5 * std)
-            x_range = np.linspace(x_min_curve, x_max_curve, 200)
+            fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
             
-            # Tính toán PDF và nhân với (Tổng mẫu * Độ rộng bin) để khớp với trục Y của Histogram
-            y_normal = stats.norm.pdf(x_range, mean, std) * n * bin_width
+            # Normal Curve
+            x_curve = np.linspace(min(data + [lsl]) - 0.1, max(data + [usl]) + 0.1, 200)
+            y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
+            fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
             
-            # Vẽ đường Normal Curve
-            fig_hist.add_trace(go.Scatter(
-                x=x_range, 
-                y=y_normal, 
-                mode='lines', 
-                line=dict(color='#323130', width=2), # Màu xám đậm chuyên nghiệp
-                name="Normal Curve"
-            ))
-
-            # Thêm đường Spec USL/LSL để đối chiếu trực quan
-            fig_hist.add_vline(x=usl, line_dash="dot", line_color="#D83B01", line_width=1)
-            fig_hist.add_vline(x=lsl, line_dash="dot", line_color="#D83B01", line_width=1)
-
-            fig_hist.update_layout(
-                height=250, 
-                margin=dict(l=10, r=10, t=30, b=10), 
-                template="plotly_white", 
-                title="Distribution & Normal Curve",
-                xaxis=dict(showline=True, linecolor='#605E5C'),
-                yaxis=dict(showgrid=True, gridcolor='#F3F2F1'),
-                showlegend=False
-            )
-            
-            st.plotly_chart(fig_hist, use_container_width=True, config={'displayModeBar': False})
+            fig_hist.update_layout(height=350, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Distribution & Normal Curve", showlegend=False)
+            st.plotly_chart(fig_hist, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+
+        with col_box:
+            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+            fig_box = go.Figure()
+            fig_box.add_trace(go.Box(y=data, marker_color='#0078D4', boxpoints='all', jitter=0.3, name="Data"))
+            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01")
+            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01")
+            fig_box.update_layout(height=350, margin=dict(l=10,r=10,t=30,b=10), template="plotly_white", title="Boxplot Analysis")
+            st.plotly_chart(fig_box, use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- BOTTOM ROW: TREND CHART ---
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        x_axis = df_clean[time_col] if time_col else list(range(1, n + 1))
+        p_colors = ['#D83B01' if (v < lsl or v > usl) else '#0078D4' for v in data]
+        
+        fig_trend = go.Figure()
+        fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', marker=dict(color=p_colors, size=10), line=dict(color='#0078D4', width=2), name="Trend"))
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", annotation_text="USL")
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", annotation_text="LSL")
+        fig_trend.update_layout(height=400, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", title="Process Trend (Control Chart)")
+        st.plotly_chart(fig_trend, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
