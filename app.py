@@ -6,170 +6,147 @@ import plotly.graph_objects as go
 from scipy import stats
 
 # 1. PAGE CONFIGURATION
-st.set_page_config(
-    page_title="Process Capability Dashboard",
-    page_icon="📊",
-    layout="wide"
-)
+st.set_page_config(page_title="Process Capability Dashboard", layout="wide")
 
-# 2. CUSTOM CSS FOR PROFESSIONAL UI
+# Professional UI Styling
 st.markdown("""
     <style>
-    /* Nền chính của ứng dụng */
-    .stApp {
-        background-color: #f4f7f6;
-    }
-    /* Làm đẹp các thẻ Metric */
+    .stApp { background-color: #f9f9f9; }
     [data-testid="stMetric"] {
         background-color: #ffffff;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border-left: 6px solid #008080;
-    }
-    /* Tùy chỉnh Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #eef2f3;
-    }
-    /* Header trang */
-    .main-header {
-        background-color: #008080;
-        color: white;
-        padding: 20px;
+        padding: 15px;
         border-radius: 10px;
-        text-align: center;
-        margin-bottom: 25px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        border-left: 5px solid #008080;
+    }
+    .main-header {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        border-bottom: 3px solid #008080;
+        margin-bottom: 20px;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. GOOGLE SHEETS CONNECTION
-def load_data():
-    if "connections" in st.secrets and "gsheets" in st.secrets["connections"]:
+# 2. DATA LOADING FROM GOOGLE SHEETS
+def get_data():
+    if "connections" in st.secrets:
         try:
             conn = st.connection("gsheets", type=GSheetsConnection)
-            # ttl="1m" để tự động cập nhật dữ liệu mới sau mỗi 1 phút
-            df = conn.read(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], ttl="1m")
-            return df
+            url = st.secrets["connections"]["gsheets"]["spreadsheet"]
+            # Refresh data every 60 seconds (ttl=60)
+            return conn.read(spreadsheet=url, ttl=60)
         except Exception as e:
-            st.error(f"Error connecting to Google Sheets: {e}")
+            st.error(f"Connection Error: {e}")
             return None
     else:
-        st.error("Missing Google Sheets Configuration in Secrets!")
+        st.error("Google Sheets configuration not found in Secrets!")
         return None
 
-# MAIN APP LOGIC
-df = load_data()
+df = get_data()
 
 if df is not None:
-    # --- SIDEBAR SETTINGS ---
-    st.sidebar.header("🛠️ Settings")
-    
-    # Chọn cột dữ liệu
+    # --- SIDEBAR: SETTINGS ---
+    st.sidebar.header("📊 Configuration")
     target_col = st.sidebar.selectbox("Select Data Column", df.columns)
     
-    # Thiết lập USL/LSL
-    usl = st.sidebar.number_input("Upper Spec Limit (USL)", value=0.1930, format="%.4f")
-    lsl = st.sidebar.number_input("Lower Spec Limit (LSL)", value=0.1530, format="%.4f")
+    # Set USL/LSL (Default based on your sample)
+    usl = st.sidebar.number_input("Upper Spec Limit (USL)", value=-0.100, format="%.3f")
+    lsl = st.sidebar.number_input("Lower Spec Limit (LSL)", value=-0.500, format="%.3f")
     
-    # Xử lý dữ liệu số
-    clean_data = pd.to_numeric(df[target_col], errors='coerce').dropna()
-    data_list = clean_data.tolist()
+    # Numeric Data Cleaning
+    raw_values = pd.to_numeric(df[target_col], errors='coerce').dropna()
+    data = raw_values.tolist()
 
-    if len(data_list) > 1:
+    if len(data) > 1:
         # --- CALCULATIONS ---
-        mean = np.mean(data_list)
-        std = np.std(data_list, ddof=1)
-        max_v = np.max(data_list)
-        min_v = np.min(data_list)
-        n_samples = len(data_list)
-
-        # Cp, Cpk, Ca
+        n_samples = len(data)
+        mean = np.mean(data)
+        std = np.std(data, ddof=1)
+        
         cp = (usl - lsl) / (6 * std) if std != 0 else 0
-        cpu = (usl - mean) / (3 * std) if std != 0 else 0
-        cpl = (mean - lsl) / (3 * std) if std != 0 else 0
-        cpk = min(cpu, cpl)
+        cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
         ca = (mean - (usl + lsl)/2) / ((usl - lsl)/2)
 
         # --- UI DISPLAY ---
-        st.markdown('<div class="main-header"><h1>Process Capability Analysis (Cp, Cpk)</h1></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="main-header"><h1>Analysis: {target_col} (LAB)</h1></div>', unsafe_allow_html=True)
 
-        # Row 1: Basic Statistics
-        st.subheader("📋 Analysis Results")
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Sample Size (N)", n_samples)
-        m2.metric("Mean", f"{mean:.4f}")
-        m3.metric("StdDev", f"{std:.4f}")
-        m4.metric("Max", f"{max_v:.4f}")
-        m5.metric("Min", f"{min_v:.4f}")
+        # Row 1: Capability Indices
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ca (Bias)", f"{ca:.2f}")
+        c2.metric("Cp (Precision)", f"{cp:.2f}")
+        
+        # Cpk Color Coding
+        cpk_color = "green" if cpk >= 1.33 else "orange" if cpk >= 1.0 else "red"
+        c3.markdown(f"**Cpk (Capability Index)**")
+        c3.markdown(f"<h1 style='color:{cpk_color}; margin-top:-15px;'>{cpk:.2f}</h1>", unsafe_allow_html=True)
 
         st.write("---")
 
-        # Row 2: Capability Indices
-        c_a, c_p, c_pk = st.columns(3)
-        c_a.metric("Ca (Bias)", f"{ca:.2f}")
-        c_p.metric("Cp (Precision)", f"{cp:.2f}")
-        
-        # Color-coded Cpk (Red if < 1.0, Orange < 1.33, Green >= 1.33)
-        cpk_color = "#e74c3c" if cpk < 1.0 else "#f39c12" if cpk < 1.33 else "#27ae60"
-        with c_pk:
-            st.markdown(f"""
-                <div style="background-color:{cpk_color}; padding:15px; border-radius:12px; text-align:center; color:white;">
-                    <p style="margin:0; font-weight:bold; font-size:18px;">Cpk (Capability Index)</p>
-                    <h1 style="margin:0; font-size:48px;">{cpk:.2f}</h1>
-                </div>
-                """, unsafe_allow_html=True)
+        # --- ADVANCED PLOT (MATCHING YOUR IMAGE) ---
+        counts, bins = np.histogram(data, bins=12)
+        bin_centers = 0.5 * (bins[:-1] + bins[1:])
+        bin_width = bins[1] - bins[0]
 
-        st.write("---")
-
-        # Row 3: Histogram & Distribution
-        st.subheader("📊 Measurement Histogram & Normal Distribution")
-        
-        # Plotly Chart
-        x_range = np.linspace(min(data_list + [lsl]) * 0.98, max(data_list + [usl]) * 1.02, 200)
-        y_norm = stats.norm.pdf(x_range, mean, std)
+        # Bar colors: Red for Out-of-Spec, Blue for In-Spec
+        bar_colors = ['#ff7f7f' if (x < lsl or x > usl) else '#5499c7' for x in bin_centers]
 
         fig = go.Figure()
 
-        # Histogram (Yellowish color like the user's image)
-        fig.add_trace(go.Histogram(
-            x=data_list, 
-            nbinsx=15, 
-            name='Actual Data',
-            histnorm='probability density',
-            marker_color='#f1c40f',
-            opacity=0.75
+        # 1. Histogram Bars
+        fig.add_trace(go.Bar(
+            x=bin_centers,
+            y=counts,
+            width=bin_width * 0.9,
+            marker_color=bar_colors,
+            name='Actual Frequency',
+            showlegend=False
         ))
 
-        # Normal Curve
-        fig.add_trace(go.Scatter(
-            x=x_range, y=y_norm, 
-            mode='lines', 
-            name='Normal Curve', 
-            line=dict(color='#2980b9', width=3)
-        ))
-
-        # Annotations for LSL, USL, Mean
-        fig.add_vline(x=lsl, line_dash="dash", line_color="#C0392B", annotation_text=f"LSL: {lsl}")
-        fig.add_vline(x=usl, line_dash="dash", line_color="#C0392B", annotation_text=f"USL: {usl}")
-        fig.add_vline(x=mean, line_color="#27ae60", annotation_text=f"Mean: {mean:.4f}")
-
-        fig.update_layout(
-            template="plotly_white",
-            height=500,
-            margin=dict(l=20, r=20, t=20, b=20),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
+        # 2. Normal Distribution Curve
+        x_curve = np.linspace(min(data + [lsl]) - 0.2, max(data + [usl]) + 0.2, 200)
+        y_curve = stats.norm.pdf(x_curve, mean, std) * n_samples * bin_width
         
+        fig.add_trace(go.Scatter(
+            x=x_curve, y=y_curve, 
+            mode='lines', 
+            line=dict(color='black', width=2),
+            name='Normal Curve'
+        ))
+
+        # 3. Stats Info Box (N, Mean, Std) - Top Left
+        stats_box = f"N = {n_samples}<br>Mean = {mean:.3f}<br>Std = {std:.3f}"
+        fig.add_annotation(
+            x=0.02, y=0.95, xref="paper", yref="paper",
+            text=stats_box, showarrow=False, align="left",
+            bgcolor="white", bordercolor="black", borderwidth=1,
+            font=dict(size=13, color="black")
+        )
+
+        # 4. Spec Limit Lines (Red Dashed)
+        fig.add_vline(x=lsl, line_dash="dash", line_color="red", line_width=2)
+        fig.add_vline(x=usl, line_dash="dash", line_color="red", line_width=2)
+        
+        # Dummy trace for Legend
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', 
+                                 line=dict(color='red', dash='dash'), name='LSL / USL'))
+
+        # 5. Layout Fine-tuning
+        fig.update_layout(
+            title=dict(text=f"Data Distribution: {target_col}", x=0.5),
+            template="plotly_white",
+            xaxis_title="Measurement Value",
+            yaxis_title="Frequency",
+            height=550,
+            margin=dict(l=40, r=40, t=60, b=40),
+            legend=dict(x=0.85, y=0.95, bgcolor="rgba(255,255,255,0.8)", bordercolor="black", borderwidth=1)
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
     else:
-        st.warning("⚠️ No valid numeric data found in the selected column. Please check your Sheet.")
+        st.warning("⚠️ Insufficient data for analysis. Please check your Google Sheet.")
 
-# 4. REQUIREMENTS.TXT CONTENT (Reminder)
-# streamlit
-# streamlit-gsheets-connection
-# pandas
-# numpy
-# plotly
-# scipy
+else:
+    st.info("💡 Please verify your Google Sheets connection in Streamlit Cloud Secrets.")
