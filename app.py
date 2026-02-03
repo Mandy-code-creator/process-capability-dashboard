@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 from scipy import stats
 
-# 1. PAGE CONFIGURATION & CSS
+# 1. PAGE CONFIGURATION & CSS (Power BI Style)
 st.set_page_config(page_title="QC Power BI Dashboard", layout="wide")
 
 st.markdown("""
@@ -26,13 +26,6 @@ st.markdown("""
     .chart-container {
         background-color: white; padding: 15px; border-radius: 4px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;
-    }
-    /* Tùy chỉnh giao diện bảng giống Power BI */
-    .stDataFrame {
-        background-color: white;
-        padding: 10px;
-        border-radius: 4px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -57,11 +50,9 @@ if df is not None:
         st.header("⚙️ CONFIGURATION")
         target_col = st.selectbox("Data Column", df.columns)
         
-        # Nhãn trục X và Y
         custom_x_label = st.text_input("Trend Chart X-axis Label", value="Sequence Index")
         y_label = st.text_input("Y-axis Label (Measurement)", value="Measurement Analysis")
         
-        # Thiết lập giới hạn Spec (USL > LSL)
         usl = st.number_input("Upper Spec Limit (USL)", value=1.200, format="%.3f")
         lsl = st.number_input("Lower Spec Limit (LSL)", value=0.700, format="%.3f")
         
@@ -69,8 +60,7 @@ if df is not None:
             st.cache_data.clear()
             st.rerun()
 
-    # Xử lý dữ liệu
-    df_display = df.copy() # Giữ lại bản copy để hiển thị bảng
+    # Data Processing
     df_clean = df.copy()
     df_clean[target_col] = pd.to_numeric(df_clean[target_col], errors='coerce')
     df_clean = df_clean.dropna(subset=[target_col])
@@ -83,7 +73,7 @@ if df is not None:
         cpk = min((usl - mean)/(3*std), (mean - lsl)/(3*std)) if std != 0 else 0
         ucl, lcl = mean + (3 * std), mean - (3 * std)
         
-        # Plot Range
+        # Unified Plot Range (±3.5 Sigma for balanced Normal Curve)
         plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.1
         plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.1
 
@@ -102,43 +92,34 @@ if df is not None:
         # Config tải ảnh
         config_download = {'toImageButtonOptions': {'format': 'png', 'scale': 2}}
 
-        # --- ROW 1: DISTRIBUTION & BOXPLOT ---
-        col_hist, col_box = st.columns(2)
+        # --- ROW 1: DISTRIBUTION (FULL WIDTH) ---
+        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+        counts, bins = np.histogram(data, bins=12)
+        bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
+        bar_colors = ['#FF0000' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
+        
+        fig_hist = go.Figure()
+        fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
+        
+        # Balanced Normal Curve
+        x_curve = np.linspace(plot_min, plot_max, 500)
+        y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
+        fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
+        
+        # Spec Lines
+        fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL")
+        fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL")
 
-        with col_hist:
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            counts, bins = np.histogram(data, bins=10)
-            bin_centers, bin_width = 0.5 * (bins[:-1] + bins[1:]), bins[1] - bins[0]
-            bar_colors = ['#FF0000' if (x < lsl or x > usl) else '#0078D4' for x in bin_centers]
-            
-            fig_hist = go.Figure()
-            fig_hist.add_trace(go.Bar(x=bin_centers, y=counts, marker_color=bar_colors, name="Freq"))
-            x_curve = np.linspace(plot_min, plot_max, 500)
-            y_curve = stats.norm.pdf(x_curve, mean, std) * n * bin_width
-            fig_hist.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', line=dict(color='black', width=2), name="Normal"))
-            fig_hist.add_vline(x=usl, line_dash="dash", line_color="#D83B01", line_width=2)
-            fig_hist.add_vline(x=lsl, line_dash="dash", line_color="#D83B01", line_width=2)
+        fig_hist.update_layout(
+            height=400, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", 
+            title="Process Distribution & Normal Curve Analysis", showlegend=False,
+            xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
+            yaxis=dict(title="Frequency", mirror=True, showline=True, linecolor='black')
+        )
+        st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            fig_hist.update_layout(
-                height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", title="Distribution Analysis",
-                xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
-                yaxis=dict(mirror=True, showline=True, linecolor='black')
-            )
-            st.plotly_chart(fig_hist, use_container_width=True, config=config_download)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        with col_box:
-            st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-            fig_box = go.Figure()
-            fig_box.add_trace(go.Box(y=data, marker=dict(color='#0078D4', outliercolor='#FF0000'), boxpoints='all', jitter=0.3))
-            fig_box.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2)
-            fig_box.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2)
-            fig_box.update_layout(height=350, margin=dict(l=10,r=10,t=40,b=10), template="plotly_white", title="Boxplot & Outliers",
-                                 yaxis=dict(range=[plot_min, plot_max], mirror=True, showline=True, linecolor='black'))
-            st.plotly_chart(fig_box, use_container_width=True, config=config_download)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- ROW 2: TREND CHART ---
+        # --- ROW 2: TREND CHART (FULL WIDTH) ---
         st.markdown('<div class="chart-container">', unsafe_allow_html=True)
         x_axis = list(range(1, n + 1))
         p_colors = ['#FF0000' if (v < lsl or v > usl) else '#0078D4' for v in data]
@@ -148,46 +129,22 @@ if df is not None:
         fig_trend.add_trace(go.Scatter(x=x_axis, y=data, mode='lines+markers', 
                                      marker=dict(color=p_colors, size=p_sizes, line=dict(width=1, color='white')), 
                                      line=dict(color='#0078D4', width=2)))
-        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2)
-        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2)
-        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5)
-        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5)
-        fig_trend.update_layout(height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
-                               title="Process Trend (Control Chart)",
-                               xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
-                               yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max]))
+        
+        fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="USL (Spec)")
+        fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01", line_width=2, annotation_text="LSL (Spec)")
+        fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="UCL (Control)")
+        fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", line_width=1.5, annotation_text="LCL (Control)")
+
+        fig_trend.update_layout(
+            height=450, margin=dict(l=40,r=40,t=40,b=40), template="plotly_white", 
+            title="Process Trend & Control Limits",
+            xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
+            yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max])
+        )
         st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- ROW 3: CHI TIẾT DỮ LIỆU (BẢNG) ---
-        st.markdown('<h3 style="color: #004E8C; margin-top: 20px;">📋 Detailed Data & Spec Check</h3>', unsafe_allow_html=True)
-        
-        # Chuẩn bị bảng dữ liệu kèm cột kiểm tra trạng thái
+        # --- ROW 3: DETAILED TABLE ---
+        st.markdown('<h3 style="color: #004E8C;">📋 Detailed Measurement Log</h3>', unsafe_allow_html=True)
         df_clean['Status'] = df_clean[target_col].apply(lambda x: '❌ OUT OF SPEC' if (x < lsl or x > usl) else '✅ PASS')
-        
-        # Chỉ hiển thị các cột cần thiết hoặc toàn bộ tùy ý bạn
-        display_columns = df_clean.columns.tolist()
-        
-        st.dataframe(
-            df_clean[display_columns],
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Status": st.column_config.TextColumn(
-                    "Status",
-                    help="Checks if value is within USL and LSL",
-                ),
-                target_col: st.column_config.NumberColumn(
-                    format="%.4f"
-                )
-            }
-        )
-
-        # Thêm nút tải file CSV để bạn báo cáo nhanh
-        csv = df_clean.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Detailed Report (CSV)",
-            data=csv,
-            file_name='QC_Detailed_Report.csv',
-            mime='text/csv',
-        )
+        st.dataframe(df_clean, use_container_width=True, hide_index=True)
