@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from scipy import stats
 import math
 
-# 1. PAGE CONFIGURATION
+# 1. 頁面配置 (優化列印佈局)
 st.set_page_config(page_title="QC 品質控管分析報告", layout="wide")
 
 st.markdown("""
@@ -31,7 +31,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. DATA LOADING
+# 2. 數據讀取
 def load_data():
     if "connections" in st.secrets:
         try:
@@ -49,7 +49,9 @@ if df is not None:
     with st.sidebar:
         st.header("⚙️ 參數設定")
         target_col = st.selectbox("選擇量測欄位", df.columns)
-        sigma_val = st.slider("控制界限 Sigma (σ)", 1.0, 4.0, 3.0, 0.5)
+        
+        # --- 改為手動輸入 Sigma ---
+        sigma_val = st.number_input("控制界限 Sigma (σ) 設定", min_value=0.1, max_value=6.0, value=3.0, step=0.1, format="%.1f")
         
         st.write("---")
         custom_x_label = st.text_input("趨勢圖 X 軸標籤", "樣本序號")
@@ -69,10 +71,11 @@ if df is not None:
     data = df_clean[target_col].tolist()
 
     if len(data) > 1:
-        # --- CALCULATIONS ---
+        # --- 核心統計計算 ---
         n, mean, std = len(data), np.mean(data), np.std(data, ddof=1)
         sturges_k = int(1 + 3.322 * math.log10(n))
         
+        # Ca, Cp, Cpk
         u_spec = (usl + lsl) / 2
         t_spec = usl - lsl
         ca = (mean - u_spec) / (t_spec / 2) if t_spec != 0 else 0
@@ -83,10 +86,10 @@ if df is not None:
         plot_min = min(lsl, lcl, min(data), mean - 3.5*std) - 0.05
         plot_max = max(usl, ucl, max(data), mean + 3.5*std) + 0.05
 
-        # --- MAIN UI ---
-        st.markdown(f'<div class="pbi-header"><span style="font-size: 16px; font-weight: 700;">品質分析報告 | {target_col}</span></div>', unsafe_allow_html=True)
+        # --- 主界面 ---
+        st.markdown(f'<div class="pbi-header"><span style="font-size: 16px; font-weight: 700;">品質分析報告 | 繁體中文 QC Report</span></div>', unsafe_allow_html=True)
 
-        # KPI Row
+        # KPI 卡片列
         k1, k2, k3, k4, k5, k6 = st.columns(6)
         metrics = [("樣本數", n), ("平均值 μ", f"{mean:.3f}"), ("標準差 σ", f"{std:.3f}"), 
                    ("Ca (準確度)", f"{ca:.2f}"), ("Cp (精密度)", f"{cp:.2f}"), ("Cpk (能力)", f"{cpk:.2f}")]
@@ -97,7 +100,7 @@ if df is not None:
         st.write("")
         config_dl = {'toImageButtonOptions': {'format': 'png', 'scale': 3, 'filename': 'QC_Export_Parallel'}}
 
-        # --- BIỂU ĐỒ SONG SONG ---
+        # --- 雙圖並列佈局 (適合 A4 橫向或拼貼) ---
         col_left, col_right = st.columns(2)
 
         with col_left:
@@ -117,7 +120,7 @@ if df is not None:
 
             fig_hist.update_layout(
                 height=300, margin=dict(l=10, r=10, t=30, b=10), template="plotly_white",
-                title=dict(text=f"分佈概覽 (μ={mean:.2f})", font=dict(size=12)),
+                title=dict(text=f"數據分佈 (Sturges Bins: {sturges_k})", font=dict(size=12)),
                 showlegend=False,
                 xaxis=dict(range=[plot_min, plot_max], title=y_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(title="頻率", mirror=True, showline=True, linecolor='black')
@@ -135,19 +138,19 @@ if df is not None:
             
             fig_trend.add_hline(y=usl, line_dash="dash", line_color="#D83B01")
             fig_trend.add_hline(y=lsl, line_dash="dash", line_color="#D83B01")
-            fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10")
-            fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10")
+            fig_trend.add_hline(y=ucl, line_dash="dot", line_color="#107C10", annotation_text=f"UCL ({sigma_val}σ)")
+            fig_trend.add_hline(y=lcl, line_dash="dot", line_color="#107C10", annotation_text=f"LCL ({sigma_val}σ)")
 
             fig_trend.update_layout(
                 height=300, margin=dict(l=40, r=40, t=30, b=40), template="plotly_white",
-                title=dict(text="趨勢監控圖", font=dict(size=12)),
+                title=dict(text=f"趨勢監控 (控制界限 ±{sigma_val}σ)", font=dict(size=12)),
                 xaxis=dict(title=custom_x_label, mirror=True, showline=True, linecolor='black'),
                 yaxis=dict(title=y_label, mirror=True, showline=True, linecolor='black', range=[plot_min, plot_max])
             )
-            st.plotly_chart(fig_trend, use_container_width=True, config=config_dl)
+            st.plotly_chart(fig_trend, use_container_width=True, config=config_download)
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # --- ROW 3: DATA TABLE ---
-        st.markdown('<div style="color: #004E8C; font-weight: 600; margin-bottom: 5px;">📋 詳細量測紀錄</div>', unsafe_allow_html=True)
+        # --- 詳細數據表格 ---
+        st.markdown('<div style="color: #004E8C; font-weight: 600; margin-bottom: 5px;">📋 詳細量測紀錄表</div>', unsafe_allow_html=True)
         df_clean['判定'] = df_clean[target_col].apply(lambda x: '❌ OUT' if (x < lsl or x > usl) else '✅ PASS')
         st.dataframe(df_clean, use_container_width=True, hide_index=True)
